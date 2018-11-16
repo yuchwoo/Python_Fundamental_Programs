@@ -1,0 +1,256 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Oct  2 16:54:09 2018
+@author: Yuchen Wu
+"""
+#####################################################################
+###Welcome to Kiwiland Train Rail System Program!!
+###
+###The project was implemented in Python 3(Tested in 3.6 ver)
+###This problem is a complex linked-lists problem as inspected.
+###For more convenient setup,testing,and debugging purposes, the project was
+###composed in a single file.
+###The first part contains the logic and functions for the rail system
+###The second part contains the given conditions including:
+###  Distance between trains stops, Routes test cases
+###The last part contains the excecution code for all the test cases
+#####################################################################
+import sys
+from itertools import tee
+##############################################################
+###1. Initialize the classes and functions for the rail system
+##############################################################
+
+#Initialize the object class for trip stops to be stored and connected
+class Stops:
+    def __init__(self, name):
+        self.name = name
+        self.distances = {}
+        self.distance = float('inf')
+
+    def connect(self, connected_locations, distance):
+        self.distances[connected_locations] = distance
+
+    def build_connections(self):
+        return self.distances.keys()
+
+    def connected_locations(self):
+        names = [station.name for station in self.build_connections()]
+        return names
+
+    def get_distance(self, connected_locations):
+        return self.distances[connected_locations]
+    
+#Exception for NoSuchRoute 
+class NoSuchRoute(Exception):
+    pass
+    
+#Initialize the object class for stations to be stored and connected
+class Valid_Station:
+    def __init__(self, station):
+        self.station = station
+        self.name = station.name
+        
+    def build_connections(self):
+        return self.station.build_connections()
+
+    def connected_locations(self):
+        return [station.name for station in self.build_connections()]
+    
+#Define the class of Railsystem to establish the trip recording&restriction system
+class railsystem:    
+    def __init__(self):
+        self.station = {}  
+        
+    #Add a station (represented by a letter refererred by the problem) 
+    def add_a_station(self, name):
+        self.station[name] = Stops(name)
+        
+    #Add each edge(firststation,secondstation,distance)
+    def add_an_edge(self, firstStation, secondStation,distance):
+        if firstStation not in self.station:
+            self.add_a_station(firstStation)
+        if secondStation not in self.station:
+            self.add_a_station(secondStation)
+        self.station[firstStation].connect(self.station[secondStation], distance)
+        
+    #Generate list of passed station names as trips
+    def passed_stations(self, stops=[]):
+        validated_stations = [self.station[name] for name in stops]
+        return tracker(validated_stations)
+    
+    #Send the trip value for distance calculation
+    def calc_distance(self, stops=[]):
+        trip = self.passed_stations(stops)
+        return trip.distance()
+    
+    #Generate all trips 
+    def all_trips(self, stations, trip_range, max_stops=float('inf'), max_distance=30):
+        if trip_range > 0:
+            yield stations
+            current_trip = self.passed_stations(stations)
+            for originals in current_trip.original_station():
+                for trips in self.all_trips(stations + [originals], trip_range - 1):
+                    if len(trips) <= max_stops: # dump out faster if we're over the max_stops
+                        new = self.passed_stations(trips)
+                        if new.distance() <= max_distance:
+                            yield trips
+        else:
+            pass
+        
+    #Function to fetch all_trips above
+    def trip_base(self, name, trip_range, max_stops=float('inf'), max_distance=30):
+        all_trip_names = self.all_trips([name], trip_range, max_stops, max_distance)
+        return all_trip_names
+    
+    #Validate all_trips and build function to find List of Routes 
+    #from 'X' to 'X' with no more than 3 stops(4destinations in total)
+    def trip_recorder(self, orig, desti, trip_range=10, max_stops=float('inf'), max_distance=30):
+        all_trip_names = self.trip_base(orig, trip_range, max_stops, max_distance)
+        validated_stations = []
+        for stations in all_trip_names:
+         # A match is found in the algorithm
+            if len(stations) > 1:
+                trip = self.passed_stations(stations)
+                if trip.stops[-1].name == desti:
+                    validated_stations.append(trip)
+        return validated_stations
+    
+    #Make a dictionary of the trips lists, list is out of index range so we use Dict
+    def trips_dic(self, trips):
+        trips_dict = {}
+        for trip in trips:
+            trips_dict[trip.distance()] = trip
+        return trips_dict
+    
+    #Validator to make sure the validated trips are only added with condition: wxactly x stops
+    def stops_restricted_trips(self, orig, desti, stops):
+        trips = self.trip_recorder(orig, desti, trip_range=15, max_stops=stops+1)#to ensure larger range of data to be accessed
+        validated_trips = []
+        for trip in trips:
+            if trip.count_stops() == stops:#with exactly x stops
+                validated_trips.append(trip)
+        return validated_trips
+    
+    #Ordered the validated trips by distances values
+    def order_trips_in_d(self, trips):
+        trips_dict = self.trips_dic(trips)
+        ordered_distance = sorted(trips_dict.keys())
+        for distance in ordered_distance:
+            yield trips_dict[distance]
+            
+    #Put ordered trips in list and select the zero index value as the shortest trip
+    def shortest_from_to(self, startname, targetname):
+        all_trips = self.trip_recorder(startname, targetname)
+        shortest_trip = list( self.order_trips_in_d(all_trips) )[0]
+        return shortest_trip
+
+    
+#Trip Stop Tracker
+class tracker:
+    #Add trip stop as a valididated station to object
+    def add_stop(self, station):
+        self.stops.append(Valid_Station(station))
+        
+    def __init__(self, stations=[]):
+        self.stops =  []
+        if stations:
+            for sta in stations:
+                self.add_stop(sta)
+                
+    #Make the list for the station pairs with starting location and finish location              
+    def station_pairs(self):
+        starts, targets = tee(self.stops)
+        next(targets, None)
+        station_pairs = zip(starts, targets)
+        for start, target in station_pairs:
+            if target.name in start.connected_locations():
+                yield (start, target)
+            else:
+                raise NoSuchRoute()
+                
+#Calculate total distance for the trips
+    def distance(self):
+        distances=[]
+        for origin, destination in self.station_pairs():
+                distances.append(origin.station.get_distance(destination.station))
+        total_distance = sum(distances)
+        return total_distance
+    
+#NumOfStops is actually the length of list of stations minus one
+    def count_stops(self):
+        return len(self.stops)-1
+    
+#Give the starting station of the trip
+    def original_station(self, non_visited_only=False):
+        return self.stops[-1].connected_locations()
+    
+    
+##############################################################
+###2. Initialize the given translated edges with distance
+###         AB5, BC4, CD8, DC8, DE6, AD5, CE2, EB3, AE7
+##############################################################
+
+#Input Distances and Routes    
+def given_edges():
+    railsys = railsystem()
+    # Graph: AB5, BC4, CD8, DC8, DE6, AD5, CE2, EB3, AE7
+    railsys.add_an_edge('A', 'B', 5)
+    railsys.add_an_edge('B', 'C', 4)
+    railsys.add_an_edge('C', 'D', 8)
+    railsys.add_an_edge('D', 'C', 8)
+    railsys.add_an_edge('D', 'E', 6)
+    railsys.add_an_edge('A', 'D', 5)
+    railsys.add_an_edge('C', 'E', 2)
+    railsys.add_an_edge('E', 'B', 3)
+    railsys.add_an_edge('A', 'E', 7)
+    return railsys
+
+def test_cases():
+    trips = [
+     ['A', 'B', 'C'],
+     ['A', 'D'],
+     ['A', 'D', 'C'],
+     ['A', 'E', 'B', 'C', 'D'],
+     ['A', 'E', 'D'] ]
+    return trips
+
+##############################################################
+###3. Set the frame and execute tasks for the test cases
+##############################################################
+    
+railsys = given_edges()
+
+#3.1 Execute and print Output 1-5: Calculate the distances of given routes
+def distance_calc(railsys):
+    trips = test_cases()
+    for trip in trips:
+        try:
+            distance = railsys.calc_distance(trip)
+        except NoSuchRoute:
+            print ('Output #',trips.index(trip)+1,':',"NO SUCH ROUTE")
+        if distance:
+            print ('Output #',trips.index(trip)+1,':',distance)
+        distance = 0
+distance_calc(railsys)
+
+#3.2 Execute and print Output 6,7: Calculate numOfTrips with restrictions
+def num_of_trips(railsys):
+    trips = railsys.trip_recorder('C', 'C', 4)
+    print ("Output # 6 :",len(list(trips)))
+    trips = railsys.stops_restricted_trips('A', 'C', 4)
+    print ("Output # 7 :",len(list(trips)))
+num_of_trips(railsys)
+
+#3.3 Execute and print Output 8,9,10:Calculate lenOfShortestRoutes and totalNumOfRoutes
+def len_of_min_distance(railsys):
+    a_c = railsys.shortest_from_to('A', 'C')
+    print ("Output # 8 :",a_c.distance())
+    b_b = railsys.shortest_from_to('B', 'B')
+    print ("Output # 9 :",b_b.distance())
+
+def total_routes(railsys):
+    trips = railsys.trip_recorder('C', 'C', max_distance=29)
+    print ("Output # 10:",len( list(trips)))
+len_of_min_distance(railsys)
+total_routes(railsys)
